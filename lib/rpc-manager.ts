@@ -18,6 +18,7 @@ import {
 import { cacheSessionPath, catalogFirstMessage, getLatestModelChange, invalidateSessionListCache, readLatestSessionEntryId, resolveSessionPath } from "./session-reader";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
 import { notifySessionComplete } from "./web-push";
+import { sessionDisplayTitle } from "./session-fork-name";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
 import type { SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-types";
@@ -72,8 +73,8 @@ export interface AgentEvent {
 }
 
 type EventListener = (event: AgentEvent) => void;
-/** `sessionName`: the live session's own title (its newest `session_info`), read without a disk scan. */
-type AgentRunCompleteListener = (sessionId: string, sessionName: string | undefined) => void;
+/** The live session's display title and last assistant reply, read without a disk scan. */
+type AgentRunCompleteListener = (sessionId: string, sessionName: string, assistantText: string | undefined) => void;
 
 type PendingUiResponse = {
   resolve: (response: ExtensionUiResponse) => void;
@@ -502,9 +503,18 @@ export class AgentSessionWrapper {
     if (!this.agentRunNeedsCompletion || this.isRunning()) return;
     this.agentRunNeedsCompletion = false;
     // A stopped run did not finish a task, as pi's own status reporting has it: nothing to announce.
-    if (this.suppressCompletionNotifications || this.lastRunAborted) return;
+    if (this.suppressCompletionNotifications || this.lastRunAborted || !this.onAgentRunComplete) return;
     try {
-      this.onAgentRunComplete?.(this.sessionId, this.inner.sessionManager.getSessionName());
+      const manager = this.inner.sessionManager;
+      const name = manager.getSessionName();
+      const firstUserMessage = name ? undefined : (manager.getEntries() as unknown as SessionEntry[])
+        .find((entry): entry is SessionMessageEntry => entry.type === "message" && entry.message.role === "user");
+      const title = sessionDisplayTitle({
+        id: this.sessionId,
+        name,
+        firstMessage: firstUserMessage ? catalogFirstMessage(runtimeMessageText(firstUserMessage)) : "",
+      });
+      this.onAgentRunComplete(this.sessionId, title, this.inner.getLastAssistantText());
     } catch (error) {
       console.error("[pi-web] completion listener failed:", error instanceof Error ? error.message : error);
     }
@@ -2718,8 +2728,8 @@ export async function startRpcSession(
     const wrapper = new AgentSessionWrapper(inner, {
       exactSystemPrompt,
       chatOnly,
-      onAgentRunComplete: (completedSessionId, sessionName) => {
-        void notifySessionComplete(completedSessionId, sessionName).catch((error) => {
+      onAgentRunComplete: (completedSessionId, sessionName, assistantText) => {
+        void notifySessionComplete(completedSessionId, sessionName, assistantText).catch((error) => {
           console.error("[pi-web] failed to send completion push:", error instanceof Error ? error.message : error);
         });
       },

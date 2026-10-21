@@ -31,8 +31,8 @@ interface WebPushEnvironment {
 export interface WebPushNotifier {
   getVapidPublicKey: () => string;
   addSubscription: (subscription: PushSubscriptionRecord) => void;
-  /** `sessionName` titles the notification; without one it reads "Session complete". */
-  notifySessionComplete: (sessionId: string, sessionName?: string) => Promise<void>;
+  /** Title with the session name and preview the last two non-empty lines of its reply. */
+  notifySessionComplete: (sessionId: string, sessionName?: string, assistantText?: string) => Promise<void>;
 }
 
 function stateFilePath(): string {
@@ -132,11 +132,15 @@ export function createWebPushNotifier(environment: WebPushEnvironment): WebPushN
       ];
       saveState();
     },
-    async notifySessionComplete(sessionId, sessionName) {
+    async notifySessionComplete(sessionId, sessionName, assistantText) {
       if (state.subscriptions.length === 0) return;
+      const preview = assistantText?.split(/\r\n|[\n\r]/).map((line) => line.trim()).filter(Boolean).slice(-2).join("\n");
+      // Leave room in the 4 KiB Web Push payload for Unicode text and metadata.
+      const title = Array.from(sessionName?.trim() ?? "").slice(0, 100).join("");
+      const body = Array.from(preview ?? "").slice(-600).join("");
       const payloadFor = (locale: string) => ({
-        title: sessionName ?? localeText(locale, "sessionComplete"),
-        body: localeText(locale, "taskFinished"),
+        title: title || localeText(locale, "sessionComplete"),
+        body: body || localeText(locale, "taskFinished"),
         url: `/?session=${encodeURIComponent(sessionId)}`,
         tag: `pi-session-complete:${sessionId}`,
       });
@@ -181,7 +185,7 @@ export function addSubscription(subscription: PushSubscriptionRecord): Promise<v
   return getNotifier().then((notifier) => notifier.addSubscription(subscription));
 }
 
-export async function notifySessionComplete(sessionId: string, sessionName?: string): Promise<void> {
+export async function notifySessionComplete(sessionId: string, sessionName?: string, assistantText?: string): Promise<void> {
   const notifier = await getNotifier();
-  await notifier.notifySessionComplete(sessionId, sessionName);
+  await notifier.notifySessionComplete(sessionId, sessionName, assistantText);
 }
