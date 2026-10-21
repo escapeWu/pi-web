@@ -15,6 +15,7 @@ import {
 } from "@/hooks/useChatAppearance";
 import { useEnterSendMode, setEnterSendMode } from "@/hooks/useEnterSendMode";
 import { useFilesPlacement, setFilesPlacement } from "@/hooks/useFilesPlacement";
+import { APP_ICON_IDS, APP_ICON_LABELS, appIconFiles, type AppIconId } from "@/lib/app-icon";
 import { sendAgentCommand } from "@/lib/agent-client";
 import type { ProjectTrustStatus, ToolSettingsResponse } from "@/lib/api-types";
 import {
@@ -87,11 +88,51 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
   const [cacheMissNotices, setCacheMissNotices] = useState<boolean | null>(null);
   const [cacheMissNoticesSaving, setCacheMissNoticesSaving] = useState(false);
   const [cacheMissNoticesError, setCacheMissNoticesError] = useState<string | null>(null);
+  const [appIcon, setAppIcon] = useState<AppIconId | null>(null);
+  const [appIconSaving, setAppIconSaving] = useState(false);
+  const [appIconError, setAppIconError] = useState<string | null>(null);
   const [pushRegistering, setPushRegistering] = useState(false);
   const [pushStatus, setPushStatus] = useState<{ kind: "ok" | "error"; message: string } | null>(null);
   const [webAuthEnabled, setWebAuthEnabled] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/app-icon")
+      .then((response) => response.ok ? response.json() : null)
+      .then((data: { id?: AppIconId } | null) => {
+        if (!cancelled && data?.id) setAppIcon(data.id);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  // The icon belongs to this pi-web instance (the manifest is served by it), so
+  // it saves on the server. The tab's own favicon follows at once; an installed
+  // app keeps the icon it was added with until it is removed and added again.
+  const chooseAppIcon = async (next: AppIconId) => {
+    if (next === appIcon || appIconSaving) return;
+    setAppIconSaving(true);
+    setAppIconError(null);
+    try {
+      const response = await fetch("/api/app-icon", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: next }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setAppIcon(next);
+      const files = appIconFiles(next);
+      for (const [rel, href] of [["icon", files.icon192], ["apple-touch-icon", files.appleTouch]] as const) {
+        document.head.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`)?.setAttribute("href", href);
+      }
+    } catch (error) {
+      setAppIconError(`${t("settings.appIconSaveFailed")} ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setAppIconSaving(false);
+    }
+  };
 
   useEffect(() => {
     setThinkingExpanded(isThinkingExpandedByDefault());
@@ -251,6 +292,37 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
             );
           })}
         </div>
+      </section>
+
+      <section className="settings-general-section">
+        <h3 className="settings-general-heading">{t("settings.appIcon")}</h3>
+        <div className="settings-chat-options">
+          <div
+            className="settings-chat-option"
+            role="radiogroup"
+            aria-label={t("settings.appIcon")}
+            aria-describedby="settings-app-icon-description"
+          >
+            <div className="settings-send-mode-options">
+              {APP_ICON_IDS.map((id) => (
+                <label key={id} className="settings-send-mode-option">
+                  <input
+                    type="radio"
+                    name="app-icon"
+                    value={id}
+                    checked={appIcon === id}
+                    disabled={appIcon === null || appIconSaving}
+                    onChange={() => void chooseAppIcon(id)}
+                    className="sr-only"
+                  />
+                  <span className="settings-send-mode-label">{t(APP_ICON_LABELS[id])}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+        <p id="settings-app-icon-description" className="settings-general-description">{t("settings.appIconDescription")}</p>
+        {appIconError && <p role="alert" className="settings-general-error">{appIconError}</p>}
       </section>
 
       <section className="settings-general-section">

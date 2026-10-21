@@ -96,9 +96,12 @@ app/api/
   push/config/route.ts             GET VAPID public key
   push/subscribe/route.ts          POST register a push subscription
   app-update/route.ts              GET current vs latest published pi-web version
+  app-icon/route.ts                GET/PUT the icon variant this instance serves (favicon, home screen, manifest)
 
 lib/
   agent-client.ts           typed fetch helper for /api/agent commands
+  app-icon.ts               client-safe: the app icon variants (default, mbp) and each one's three files under public/icons
+  app-icon-preference.ts    the chosen variant in pi-web-app-icon.json; the manifest and the root layout read it
   rpc-manager.ts            AgentSessionWrapper, registry, startRpcSession
   session-reader.ts         SessionManager wrappers, path cache, buildSessionContext adapter
   session-fork.ts           forkSessionBranch(): the sidebar's Fork, a leaf-branch copy on a fresh SessionManager named after its source, typed refusals
