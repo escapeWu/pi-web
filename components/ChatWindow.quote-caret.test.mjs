@@ -2,14 +2,15 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-// "Ask here" inserts the quote and leaves the caret at its end so the question
-// is typed after it. `window.getSelection().removeAllRanges()` clears the
+// Quoting a selection into the composer leaves the caret at the quote's end so
+// the comment is typed after it. `window.getSelection().removeAllRanges()` clears the
 // focused textarea's selection too and drops the caret to offset 0 (#1319).
-test("asking about a selection in the current chat keeps the caret at the quote's end", async () => {
-  for (const path of ["../components/ChatWindow.tsx", "../demo/components/ChatWindow.tsx"]) {
+// The demo is a snapshot of the app taken earlier, which still names it askSelectionHere.
+test("quoting a selection in the current chat keeps the caret at the quote's end", async () => {
+  for (const [path, name] of [["../components/ChatWindow.tsx", "quoteSelectionHere"], ["../demo/components/ChatWindow.tsx", "askSelectionHere"]]) {
     const source = await readFile(new URL(path, import.meta.url), "utf8");
-    const body = source.match(/const askSelectionHere = useCallback\(\(\) => \{[\s\S]*?\}, \[[^\]]*\]\);/);
-    assert.ok(body, `expected askSelectionHere in ${path}`);
+    const body = source.match(new RegExp(`const ${name} = useCallback\\(\\([^)]*\\) => \\{[\\s\\S]*?\\}, \\[[^\\]]*\\]\\);`));
+    assert.ok(body, `expected ${name} in ${path}`);
     const code = body[0].replace(/^\s*\/\/.*$/gm, "");
     assert.doesNotMatch(
       code,

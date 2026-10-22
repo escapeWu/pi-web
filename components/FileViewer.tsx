@@ -28,6 +28,8 @@ import { CodeBlock, MermaidBlock } from "./MermaidBlock";
 import { DelimitedTable } from "./DelimitedTable";
 import { isDelimitedTablePath } from "@/lib/delimited-table";
 import { FrontmatterCard } from "./FrontmatterCard";
+import { captureSelectionAnchor, QuoteActions, SelectionPopover, type SelectionAnchor } from "./SelectionQuote";
+import { buildQuoteReference, inlineCode } from "@/lib/quote-reference";
 import { diffGapLabel, parseUnifiedPatch, unifiedDiffLines, type SplitDiffGap, type UnifiedDiffLine } from "@/lib/patch";
 import type { GitFileDiffResponse } from "@/lib/git-types";
 import { useI18n } from "@/hooks/useI18n";
@@ -47,6 +49,8 @@ interface Props {
   onMentionLines?: (relativePath: string, startLine: number, endLine: number) => void;
   /** Insert this file's relative path into the chat input (@ mention). */
   onAtMention?: (relativePath: string, isDir: boolean) => void;
+  /** Put a quote of the selected text (naming this file) into the chat input; offered on a markdown preview. */
+  onQuote?: (reference: string) => void;
   gitRefreshKey?: number;
   initialDisplayMode?: DisplayMode;
   /** PDF page to open on first render (`#page=N` from a markdown link). */
@@ -1138,6 +1142,7 @@ export function FileViewer({
   onOpenFile,
   onMentionLines,
   onAtMention,
+  onQuote,
   gitRefreshKey,
   initialDisplayMode,
   initialState,
@@ -1170,6 +1175,7 @@ export function FileViewer({
       onOpenFile={onOpenFile}
       onMentionLines={onMentionLines}
       onAtMention={onAtMention}
+      onQuote={onQuote}
       gitRefreshKey={gitRefreshKey}
       initialDisplayMode={initialDisplayMode}
       initialState={initialState}
@@ -1186,6 +1192,7 @@ function TextFileViewer({
   onOpenFile,
   onMentionLines,
   onAtMention,
+  onQuote,
   gitRefreshKey,
   initialDisplayMode,
   initialState,
@@ -1594,6 +1601,16 @@ function TextFileViewer({
     );
   }, [cwd, filePath, onMentionLines]);
 
+  // The toolbar under selected text in a markdown preview. A mode switch or a
+  // click anywhere else closes it (SelectionPopover), so no anchor outlives
+  // the preview it points into.
+  const quoteEnabled = !!onQuote && isMarkdown && effectiveDisplayMode === "preview";
+  const [quoteAnchor, setQuoteAnchor] = useState<SelectionAnchor | null>(null);
+  const closeQuote = useCallback(() => setQuoteAnchor(null), []);
+  const captureQuote = useCallback(() => {
+    setQuoteAnchor(captureSelectionAnchor(contentRef.current));
+  }, []);
+
   useEffect(() => {
     if (!onMentionLines || displayMode !== "source") return;
 
@@ -1822,6 +1839,7 @@ function TextFileViewer({
           viewerStateRef.current.scrollTop = event.currentTarget.scrollTop;
           viewerStateRef.current.scrollLeft = event.currentTarget.scrollLeft;
         }}
+        onPointerUp={quoteEnabled ? captureQuote : undefined}
         style={{ flex: 1, overflow: "auto", background: "var(--bg)", paddingBottom: showLoadMore ? 48 : undefined }}
       >
         {effectiveDisplayMode === "diff" && hasGitDiff ? (
@@ -1930,6 +1948,19 @@ function TextFileViewer({
           highlightedSource
         )}
       </div>
+
+      {quoteEnabled && quoteAnchor && onQuote && (
+        <SelectionPopover anchor={quoteAnchor} onClose={closeQuote} label={t("chat.quoteSelection")}>
+          <QuoteActions
+            reference={buildQuoteReference(
+              quoteAnchor.text,
+              `${t("chat.quoteFromFile")} ${inlineCode(getRelativeFilePath(filePath, cwd))}`,
+            )}
+            onQuote={onQuote}
+            onDone={closeQuote}
+          />
+        </SelectionPopover>
+      )}
     </div>
   );
 }

@@ -140,10 +140,12 @@ export function AppShell() {
   // also fire for tasks finishing in a non-active workspace whose ChatWindow
   // is not mounted. ChatWindow receives the audio callbacks as props.
   const { soundEnabled, onSoundToggle, playDoneSound, unlockAudio, holdAudio, soundEnabledRef } = useAudio();
-  const [quoteSelectionEnabled, setQuoteSelectionEnabled] = useState(false);
+  // On unless the user turned it off: a selection's Quote button is how a
+  // reply or a file reaches the composer with its source named.
+  const [quoteSelectionEnabled, setQuoteSelectionEnabled] = useState(true);
   useEffect(() => {
     try {
-      setQuoteSelectionEnabled(localStorage.getItem("pi-quote-selection-enabled") === "true");
+      setQuoteSelectionEnabled(localStorage.getItem("pi-quote-selection-enabled") !== "false");
     } catch {
       // Browser storage is best-effort.
     }
@@ -645,6 +647,13 @@ export function AppShell() {
   const handleAtMentions = useCallback((relativePaths: string[]) => {
     const mentions = buildFileAtMentionsText(relativePaths);
     if (mentions) chatInputRef.current?.insertText(mentions);
+    if (isMobile) { setRightPanelOpen(false); setSidebarOpen(false); }
+  }, [isMobile]);
+
+  // A quote built by a viewer (the file panel's markdown preview): same
+  // composer, so the agent sees which file the user is commenting on.
+  const handleQuoteReference = useCallback((reference: string) => {
+    chatInputRef.current?.insertBlock(reference);
     if (isMobile) { setRightPanelOpen(false); setSidebarOpen(false); }
   }, [isMobile]);
 
@@ -2922,6 +2931,7 @@ export function AppShell() {
               )}
               onMentionLines={rightPanelOpen ? handleFileLineMention : undefined}
               onAtMention={handleAtMention}
+              onQuote={quoteSelectionEnabled ? handleQuoteReference : undefined}
               onOpenFile={(filePath, page) => handleOpenFile(
                 filePath,
                 getFileName(filePath),

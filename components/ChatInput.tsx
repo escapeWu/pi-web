@@ -24,6 +24,7 @@ import {
 } from "@/lib/file-fuzzy";
 import { getMarkdownListContinuation } from "@/lib/markdown-list-continuation";
 import { isBareMcpCommand, isBuiltinMcpCommand } from "@/lib/mcp-command";
+import { blockInsertion } from "@/lib/quote-reference";
 import { FolderIcon, getFileIcon } from "./FileIcons";
 import { ImagePreview } from "./ImagePreview";
 import { DismissButton } from "./DismissButton";
@@ -104,6 +105,8 @@ interface Props {
 
 export interface ChatInputHandle {
   insertText: (text: string) => void;
+  /** Inserts `text` as a paragraph of its own at the caret (a quote), leaving the caret in a fresh one below it. */
+  insertBlock: (text: string) => void;
   insertIfEmpty: (text: string) => void;
   replaceMessage: (message: UserMessage) => void;
   prependText: (text: string) => void;
@@ -908,6 +911,19 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
       const before = ta.value.slice(0, start);
       const sep = before.length > 0 && !before.endsWith(" ") ? " " : "";
       replaceTextareaRange(ta, start, end, sep + text);
+      setAtQuery(null);
+    },
+    insertBlock(text: string) {
+      const ta = textareaRef.current;
+      if (!ta) {
+        setValue((v) => v + blockInsertion(v, "", text));
+        return;
+      }
+      const start = ta.selectionStart ?? ta.value.length;
+      const end = ta.selectionEnd ?? ta.value.length;
+      const insertion = blockInsertion(ta.value.slice(0, start), ta.value.slice(end), text);
+      if (!insertion) return;
+      replaceTextareaRange(ta, start, end, insertion);
       setAtQuery(null);
     },
     addImages(files: File[]) {
