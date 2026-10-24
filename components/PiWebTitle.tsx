@@ -89,6 +89,7 @@ export function PiWebTitle({ onWidthChange }: {
   const revertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const appVersion = process.env.NEXT_PUBLIC_APP_VERSION;
   const piVersion = process.env.NEXT_PUBLIC_PI_VERSION;
+  const buildStamp = process.env.NEXT_PUBLIC_BUILD_STAMP;
   const text = useScramble(versionShown ? brandVersionText(appVersion, piVersion) : BRAND_TEXT);
 
   useLayoutEffect(() => {
@@ -116,13 +117,21 @@ export function PiWebTitle({ onWidthChange }: {
   // The name says what the click shows, so the versions need no click (and
   // no scrambled text is ever read out: the name stays the same).
   return (
-    <button
-      type="button"
-      className={`sidebar-brand${versionShown ? " is-version" : ""}`}
-      aria-label={t("sidebar.brandLabel", { app: appVersion ?? "0.0.0", pi: piVersion ?? "0.0.0" })}
-      onClick={handleClick}
-    >
-      {text}
-    </button>
+    <>
+      <button
+        type="button"
+        className={`sidebar-brand${versionShown ? " is-version" : ""}`}
+        aria-label={t("sidebar.brandLabel", { app: appVersion ?? "0.0.0", pi: piVersion ?? "0.0.0" })}
+        onClick={handleClick}
+      >
+        {text}
+      </button>
+      {/* Which build this page is: the release and when it was built, so a
+          deploy that did not take is seen at a glance. Gives way before
+          anything else in the row (no min-width, clipped). */}
+      <span className="sidebar-build" title={`web ${appVersion ?? "0.0.0"} · build ${buildStamp ?? "dev"}`}>
+        {`v${appVersion ?? "0.0.0"}·${buildStamp ?? "dev"}`}
+      </span>
+    </>
   );
 }

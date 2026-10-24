@@ -11,6 +11,12 @@ try {
   piVersion = (JSON.parse(readFileSync(piPkgPath, "utf8")) as { version: string }).version;
 } catch { /* package not found, use default */ }
 
+// When this build was made (local time, MMDD-HHmm), shown beside the sidebar's
+// brand so a deployed page says which build it is. Inlined at build time.
+const buildAt = new Date();
+const pad = (n: number) => String(n).padStart(2, "0");
+const buildStamp = `${pad(buildAt.getMonth() + 1)}${pad(buildAt.getDate())}-${pad(buildAt.getHours())}${pad(buildAt.getMinutes())}`;
+
 // mdast-util-gfm-autolink-literal (remark-gfm) ships a RegExp lookbehind that
 // Safari parses only from 16.4, which blanked `/` on iOS 16.2 (#753). The loader
 // swaps it for an equivalent built at runtime; both bundlers must run it.
@@ -104,6 +110,7 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_APP_VERSION: version,
     NEXT_PUBLIC_PI_VERSION: piVersion,
+    NEXT_PUBLIC_BUILD_STAMP: buildStamp,
   },
 };
 
