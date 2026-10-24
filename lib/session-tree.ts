@@ -853,6 +853,50 @@ export function ghostTopFor({ pointerY, lineY, ghostHeight, pointerGap, lineGap,
     ?? Math.min(bottom, Math.max(minTop, wanted));
 }
 
+/** Running rows kept in view at the top of the list; later ones scroll away as before. */
+export const MAX_STUCK_RUNNING_ROWS = 4;
+
+export interface StuckRow {
+  /** The row's index in `rows`. */
+  index: number;
+  /** Where it sits in the stack at the top of the viewport, in px. */
+  top: number;
+}
+
+/**
+ * The running session rows scrolled off the top of the viewport, stacked at
+ * its top as a sticky header. A row sticks once its bottom edge is at or
+ * above the stack it would join (`scrollTop` plus the rows already stuck), so
+ * it takes its place the moment it would have left the list: no jump. The
+ * first `max` such rows in list order stick; a later one scrolls away as any
+ * other row, so a new arrival never shifts the stack. A row that is being
+ * renamed or deleted (`skip`) never sticks: its field stays where it was
+ * opened. The archive view's rows never run.
+ */
+export function getStuckRunningRows(
+  rows: readonly SidebarRow[],
+  offsets: readonly number[],
+  scrollTop: number,
+  skip: (row: Extract<SidebarRow, { kind: "session" }>) => boolean = () => false,
+  max: number = MAX_STUCK_RUNNING_ROWS,
+): StuckRow[] {
+  const top = Number.isFinite(scrollTop) ? Math.max(0, scrollTop) : 0;
+  const stuck: StuckRow[] = [];
+  if (top === 0 || max <= 0) return stuck;
+  let stackHeight = 0;
+  for (let index = 0; index < rows.length && stuck.length < max; index++) {
+    // Rows are in list order: past the stack's bottom edge nothing sticks.
+    if (offsets[index] >= top + stackHeight) break;
+    const row = rows[index];
+    if (row.kind !== "session" || row.context === "archive" || !row.status.running || skip(row)) continue;
+    const height = offsets[index + 1] - offsets[index];
+    if (offsets[index + 1] > top + stackHeight) continue;
+    stuck.push({ index, top: stackHeight });
+    stackHeight += height;
+  }
+  return stuck;
+}
+
 const UNMEASURED_VIEWPORT_HEIGHT = 600;
 
 /**

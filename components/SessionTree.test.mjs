@@ -474,12 +474,12 @@ test("row CSS stays flat, themed and quiet", () => {
   assert.doesNotMatch(css, /&/, "no CSS nesting");
   assert.doesNotMatch(css, /@starting-style|prefers-color-scheme/);
   const colors = new Set((css.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).map((color) => color.toLowerCase()));
-  for (const color of colors) assert.ok(["#ef4444", "#0891b2", "#d97706", "#f87171", "#fff"].includes(color), `unexpected color ${color}`);
+  for (const color of colors) assert.ok(["#ef4444", "#0891b2", "#d97706", "#f87171", "#fff", "#16a34a", "#4ade80"].includes(color), `unexpected color ${color}`);
   // Three text colors: content, labels, meta (plus the accent for states,
   // the errors' red and the delete button's white). No mixes of their own.
   const textColors = new Set([...css.matchAll(/(?:^|[\s;{])color: ([^;]+);/g)].map((match) => match[1]));
   for (const color of textColors) {
-    assert.ok(["var(--text)", "var(--text-muted)", "var(--text-dim)", "var(--accent)", "inherit", "#f87171", "#fff"].includes(color), `unexpected text color ${color}`);
+    assert.ok(["var(--text)", "var(--text-muted)", "var(--text-dim)", "var(--accent)", "inherit", "#f87171", "#fff", "#16a34a", "#4ade80"].includes(color), `unexpected text color ${color}`);
   }
   assert.doesNotMatch(css, /color: color-mix\(in srgb, var\(--text\)/);
 });
@@ -573,4 +573,25 @@ test("the drag ghost is shorter than a header", () => {
   // its height to keep it clear of the pointer and the line).
   assert.match(cssRule(".session-tree-drag-ghost"), /\n\s*height: 22px;/);
   assert.ok(22 < SIDEBAR_ROW_HEIGHTS.desktop.group, "shorter than a header");
+});
+
+test("a quiet time under the idle timeout reads green, never one that is running, unread or past it", () => {
+  const idle = 10 * MINUTE;
+  const warm = rowMarkup(render({ rows: [sessionRow(session("w"))], idleTimeoutMs: idle }), "session:group:w");
+  assert.match(warm, /<span class="session-tree-meta is-warm">5m<\/span>/);
+  const past = rowMarkup(render({ rows: [sessionRow(session("p", { modified: new Date(NOW - 20 * MINUTE).toISOString() }))], idleTimeoutMs: idle }), "session:group:p");
+  assert.match(past, /<span class="session-tree-meta">20m<\/span>/);
+  for (const timeout of [undefined, 0]) {
+    const off = rowMarkup(render({ rows: [sessionRow(session("o"))], idleTimeoutMs: timeout }), "session:group:o");
+    assert.doesNotMatch(off, /is-warm/);
+  }
+  const unread = rowMarkup(render({ rows: [sessionRow(session("u"), { status: { unread: true } })], idleTimeoutMs: idle }), "session:group:u");
+  assert.doesNotMatch(unread, /is-warm/);
+  assert.match(cssRule(".session-tree-meta.is-warm"), /color: #16a34a/);
+});
+
+test("a running row has no sticky stack while the list is at the top", () => {
+  const html = render({ rows: [groupRow(), sessionRow(session("r"), { status: { running: true } })] });
+  assert.doesNotMatch(html, /session-tree-sticky/);
+  assert.match(cssRule(".session-tree-sticky"), /position: sticky;[\s\S]*top: 0;[\s\S]*height: 0;/);
 });

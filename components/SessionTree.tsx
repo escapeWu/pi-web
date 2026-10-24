@@ -20,6 +20,7 @@ import { MAX_PROJECT_NAME_LENGTH, type ProjectMovePosition } from "@/lib/session
 import {
   PINNED_MORE_KEY,
   getRowOffsets,
+  getStuckRunningRows,
   getVisibleRowIndices,
   revealScrollTop,
   revealStep,
@@ -138,6 +139,11 @@ export interface SessionTreeProps {
   reveal?: SessionTreeReveal | null;
   /** The reveal request with this id was scrolled to or dropped: the parent lets go of it. */
   onRevealHandled?(id: number): void;
+  /**
+   * How long a session may sit idle before the server lets it go (ms; 0 or
+   * unknown: never). A row quieter for less than this shows its time in green.
+   */
+  idleTimeoutMs?: number;
   /** A group dropped next to another of its band. Without it no group can be dragged. */
   onMoveGroup?(projectKey: string, anchorKey: string, position: ProjectMovePosition): void;
 }
@@ -156,6 +162,13 @@ const DELETE_TITLE_MAX = 22;
 export function sessionRowTitle(session: SessionInfo): string {
   const displayFirstMessage = skillExpansionToCommand(session.firstMessage) ?? session.firstMessage;
   return session.name || displayFirstMessage.slice(0, 50) || session.id.slice(0, 12);
+}
+
+/** Whether a session last touched at `modified` is still inside the idle timeout (0 or unknown: never). */
+export function isWithinIdleTimeout(modified: string, now: number, idleTimeoutMs: number | undefined): boolean {
+  if (!idleTimeoutMs || idleTimeoutMs <= 0) return false;
+  const at = Date.parse(modified);
+  return Number.isFinite(at) && now - at < idleTimeoutMs;
 }
 
 function isImeKey(event: ReactKeyboardEvent): boolean {
@@ -179,6 +192,7 @@ export function SessionTree(props: SessionTreeProps): ReactNode {
     confirmDeleteRootId,
     activeMenuRowKey,
     reveal,
+    idleTimeoutMs,
   } = props;
   const { t } = useI18n();
   // Rows read the handlers at event time, so memoized rows need not re-render
@@ -391,6 +405,25 @@ export function SessionTree(props: SessionTreeProps): ReactNode {
     }
   }, [visibleIndices]);
 
+  // Running sessions scrolled off the top stay in a stack at the top of the
+  // viewport (a zero-height sticky box, so the browser scrolls it with no lag).
+  const stuckRows = useMemo(
+    () => (loading ? [] : getStuckRunningRows(
+      rows,
+      offsets,
+      scrollTop,
+      (row) => row.family.root.id === renamingRootId || row.family.root.id === confirmDeleteRootId,
+    )),
+    [loading, rows, offsets, scrollTop, renamingRootId, confirmDeleteRootId],
+  );
+  const stuckIndexSet = useMemo(() => new Set(stuckRows.map((stuck) => stuck.index)), [stuckRows]);
+  const stuckHeight = stuckRows.length > 0
+    ? (() => {
+        const last = stuckRows[stuckRows.length - 1];
+        return last.top + offsets[last.index + 1] - offsets[last.index];
+      })()
+    : 0;
+
   const hasTreeRows = rows.some((row) => row.kind === "session" || row.kind === "group");
   const showEmpty = !loading && !error && emptyLabel !== null && !hasTreeRows;
   // While dragging: the group's block is dimmed in place (groups never fold
@@ -418,11 +451,34 @@ export function SessionTree(props: SessionTreeProps): ReactNode {
         onPointerDownCapture={groupDrag.onPointerDownCapture}
         onClickCapture={groupDrag.onClickCapture}
       >
+        {stuckRows.length > 0 && (
+          <div className="session-tree-sticky" data-sticky-running="true">
+            <div className="session-tree-sticky-backdrop" style={{ height: stuckHeight }} />
+            {stuckRows.map(({ index, top }) => {
+              const row = rows[index] as SessionRow;
+              return (
+                <SessionRowView
+                  key={row.key}
+                  row={row}
+                  layout={layout}
+                  top={top}
+                  height={offsets[index + 1] - offsets[index]}
+                  now={now}
+                  idleTimeoutMs={idleTimeoutMs}
+                  renaming={false}
+                  confirming={false}
+                  menuOpen={row.key === activeMenuRowKey}
+                  handlers={handlersRef}
+                />
+              );
+            })}
+          </div>
+        )}
         {!loading && (
           <div ref={innerRef} className="session-tree-inner" style={{ height: offsets[rows.length] }}>
             {visibleIndices.map((index) => {
               const row = rows[index];
-              if (row.kind === "spacer") return null;
+              if (row.kind === "spacer" || stuckIndexSet.has(index)) return null;
               const top = offsets[index];
               const height = offsets[index + 1] - top;
               const menuOpen = row.key === activeMenuRowKey;
@@ -435,6 +491,7 @@ export function SessionTree(props: SessionTreeProps): ReactNode {
                     top={top}
                     height={height}
                     now={now}
+                    idleTimeoutMs={idleTimeoutMs}
                     renaming={row.family.root.id === renamingRootId}
                     confirming={row.family.root.id === confirmDeleteRootId}
                     menuOpen={menuOpen}
@@ -497,6 +554,7 @@ const SessionRowView = memo(function SessionRowView({
   top,
   height,
   now,
+  idleTimeoutMs,
   renaming,
   confirming,
   menuOpen,
@@ -507,6 +565,7 @@ const SessionRowView = memo(function SessionRowView({
   top: number;
   height: number;
   now: number;
+  idleTimeoutMs?: number;
   renaming: boolean;
   confirming: boolean;
   menuOpen: boolean;
@@ -606,6 +665,9 @@ const SessionRowView = memo(function SessionRowView({
     meta = formatShortRelativeTime(new Date(row.archivedAt), locale, nowDate);
   } else {
     meta = formatShortRelativeTime(family.latestModified, locale, nowDate);
+    // Quiet for less than the server's idle timeout: the session is still
+    // loaded there, so its time reads green until the timeout passes.
+    if (isWithinIdleTimeout(family.latestModified, now, idleTimeoutMs)) metaState = " is-warm";
   }
 
   // Archive (or restore) one click away: desktop only, never for a running

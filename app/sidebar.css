@@ -419,6 +419,36 @@ a.session-tree-main {
   color: var(--accent);
 }
 
+/* A time under the server's idle timeout: the session is still loaded there.
+   Darker green on light themes, lighter on dark ones. */
+.session-tree-meta.is-warm {
+  color: #16a34a;
+}
+
+html.dark .session-tree-meta.is-warm {
+  color: #4ade80;
+}
+
+/* Running rows scrolled off the top, kept in a stack at the viewport's top: a
+   zero-height box that sticks to the scroll box's top edge, so the browser
+   moves it with the scroll. Its backdrop hides what scrolls under it. */
+.session-tree-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  height: 0;
+}
+
+.session-tree-sticky-backdrop {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  box-sizing: content-box;
+}
+
 .session-tree-session:hover .session-tree-meta {
   display: none;
 }

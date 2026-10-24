@@ -545,6 +545,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [fileManagerError, setFileManagerError] = useState<string | null>(null);
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
   const [awaitingInputSessionIds, setAwaitingInputSessionIds] = useState<Set<string>>(() => new Set());
+  // The server's idle timeout (ms; 0: sessions never expire), from the running poll.
+  const [idleTimeoutMs, setIdleTimeoutMs] = useState(0);
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => loadUnreadSessionIds());
   const previousRunningSessionIdsRef = useRef<Set<string>>(new Set());
   const currentSuppressedCompletionSessionIdsRef = useRef<Set<string>>(new Set());
@@ -931,6 +933,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           awaitingInputSessionIds?: string[];
           completionNotificationSuppressedSessionIds?: string[];
           sessionUiStateRevision?: number | null;
+          idleTimeoutMs?: number;
         };
         if (stopped || controller !== current) return;
         runningPollAuthoritativeRef.current = true;
@@ -939,6 +942,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         );
         setRunningSessionIds((previous) => sameIdsOr(previous, data.runningSessionIds ?? []));
         setAwaitingInputSessionIds((previous) => sameIdsOr(previous, data.awaitingInputSessionIds ?? []));
+        if (typeof data.idleTimeoutMs === "number") setIdleTimeoutMs(data.idleTimeoutMs);
         // Pins and archive changed in another window: reload them.
         noteUiRevision(data.sessionUiStateRevision);
         if (data.sessionListVersion !== sessionListVersionRef.current) {
@@ -2615,6 +2619,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     renamingProjectKey,
     confirmDeleteRootId,
     activeMenuRowKey,
+    idleTimeoutMs,
     onSelectFamily: handleSelectFamily,
     onToggleGroup: handleToggleGroup,
     onShowMore: handleShowMore,
