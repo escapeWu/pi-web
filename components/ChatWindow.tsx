@@ -12,7 +12,11 @@ import { extractTurnWrittenFiles, type WrittenFile } from "@/lib/turn-written-fi
 import { getFinalAnswerViews, keepWrittenFiles, type FinalAnswerViews } from "@/lib/turn-views";
 import { formatTurnDuration, getTurnDurationMs } from "@/lib/turn-duration";
 import { buildQuotedSelection } from "@/lib/quoted-selection";
-import { buildQuoteReference } from "@/lib/quote-reference";
+import { buildQuoteReference, splitQuoteHeader } from "@/lib/quote-reference";
+import { flashQuoteSource } from "@/lib/quote-highlight";
+import { findQuoteSourceInChat } from "@/lib/quote-source";
+import { resolveLocalFilePath } from "@/lib/file-links";
+import { QuoteJumpContext } from "./QuoteSourceJump";
 import { dropMentionText, splitDroppedItems, uploadFiles, type DroppedItem } from "@/lib/file-upload-client";
 import { MessageView } from "./MessageView";
 import { MarkdownBody } from "./MarkdownBody";
@@ -77,6 +81,8 @@ interface Props {
   onOpenSettings?: (section: SettingsSection) => void;
   onContextUsageChange?: (usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => void;
   onOpenFile?: (filePath: string, page?: number) => void;
+  /** Open a file and bring a quoted passage of it into view ("jump to source" on a sent quote that names the file). */
+  onRevealQuoteInFile?: (filePath: string, text: string) => void;
   /** Files dropped onto the chat were written into the working directory. */
   onFilesUploaded?: () => void;
   onOpenSubagent?: (sessionId: string, label: string) => void;
@@ -248,7 +254,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, durationMs, cacheMis
   );
 }
 
-export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, newSessionContextBar, initialNewSessionChoices, onNewSessionChoicesChange, onAgentEnd, onToolEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onContextUsageChange, onOpenFile, onFilesUploaded, onOpenSubagent, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio, holdAudio }: Props) {
+export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, newSessionContextBar, initialNewSessionChoices, onNewSessionChoicesChange, onAgentEnd, onToolEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onContextUsageChange, onOpenFile, onRevealQuoteInFile, onFilesUploaded, onOpenSubagent, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio, holdAudio }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const completionNotificationsEnabled = session?.relation?.kind !== "subagent";
@@ -324,6 +330,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     top: number;
     left: number;
     sourceEntryId?: string;
+    range: Range;
   } | null>(null);
   const [quoteInputOpen, setQuoteInputOpen] = useState(false);
   const [quoteSubmitting, setQuoteSubmitting] = useState(false);
@@ -359,7 +366,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     const sourceEntryId = [ancestor, start, end]
       .map((element) => element?.closest<HTMLElement>("[data-message-role=\"assistant\"]")?.dataset.entryId)
       .find((entryId): entryId is string => Boolean(entryId));
-    setQuotedSelection({ text, top, left, sourceEntryId });
+    setQuotedSelection({ text, top, left, sourceEntryId, range });
   }, [quoteSelectionEnabled, quoteInputOpen]);
 
   useEffect(() => {
@@ -780,6 +787,26 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
   const isEmptyNew = isNew && messages.length === 0 && !isStreaming && !sessionBusy;
   useScrollbarVisibility(scrollContainerRef, Boolean(session?.id) || !isEmptyNew);
   const messageCwd = session?.cwd ?? newSessionCwd ?? undefined;
+
+  // "Jump to source" on a quote the user sent: the passage in this chat, or in
+  // the file the quote's header names (the file panel does the revealing).
+  const jumpToQuoteSource = useCallback((blockquote: HTMLElement): boolean => {
+    const { filePath, body } = splitQuoteHeader(blockquote.innerText);
+    if (filePath) {
+      const absolute = resolveLocalFilePath(filePath, messageCwd);
+      if (!absolute || !onRevealQuoteInFile) return false;
+      onRevealQuoteInFile(absolute, body);
+      return true;
+    }
+    const chat = messageContentRef.current;
+    const range = chat ? findQuoteSourceInChat(chat, blockquote, body) : null;
+    if (!range) return false;
+    const target = range.startContainer.parentElement;
+    const container = scrollContainerRef.current;
+    if (target && container) scrollToMessage(target, container.clientHeight * 0.3);
+    flashQuoteSource(range, target);
+    return true;
+  }, [messageCwd, onRevealQuoteInFile, scrollContainerRef, scrollToMessage]);
   const promptAnchorSpacerRef = useRef<HTMLDivElement | null>(null);
   const promptAnchorSpacerHeightRef = useRef(0);
   const promptAnchorMeasureFrameRef = useRef<number | null>(null);
@@ -891,6 +918,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
   const chatInputElement = (
     <ChatInput
       ref={chatInputRef}
+      ownsQuoteHighlights
       onSend={handleSend}
       onAbort={handleAbort}
       onSteer={agentRunning ? handleSteer : undefined}
@@ -1032,6 +1060,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
         >
           <div style={{ minWidth: 0, padding: `0 ${CHAT_COLUMN_PADDING}px` }}>
             <div ref={messageContentRef} onPointerUp={captureQuotedSelection} style={{ width: "100%", minWidth: 0, maxWidth: "var(--chat-content-max-width, 820px)", margin: "0 auto" }}>
+            <QuoteJumpContext.Provider value={jumpToQuoteSource}>
             {(() => {
               let lastUserIdx = -1;
               for (let i = messages.length - 1; i >= 0; i--) {
@@ -1298,6 +1327,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
             )}
 
             <div ref={promptAnchorSpacerRef} aria-hidden="true" />
+            </QuoteJumpContext.Provider>
             </div>
           </div>
         </div>
@@ -1344,7 +1374,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
               {quoteError && <div role="alert" style={{ color: "#dc2626", fontSize: 12, overflowWrap: "anywhere" }}>{quoteError}</div>}
             </fieldset>
           ) : (
-            <QuoteActions reference={buildQuoteReference(quotedSelection.text)} onQuote={quoteSelectionHere} onDone={closeQuotedSelection}>
+            <QuoteActions reference={buildQuoteReference(quotedSelection.text)} mark={{ range: quotedSelection.range }} onQuote={quoteSelectionHere} onDone={closeQuotedSelection}>
               {onAskInNewChat && quotedSelection.sourceEntryId && !bashRunning && (
                 <button
                   type="button"

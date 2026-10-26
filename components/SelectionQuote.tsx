@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { createPortal } from "react-dom";
 import { useI18n } from "@/hooks/useI18n";
 import { copyText } from "@/lib/clipboard";
+import { addQuoteHighlight } from "@/lib/quote-highlight";
 
 // The small toolbar that floats under selected text (the chat's messages, a
 // markdown file's preview): Quote puts the selection into the composer as a
@@ -126,6 +127,8 @@ export function SelectionPopover({ anchor, onClose, label, dialog = false, busy 
 interface QuoteActionsProps {
   /** The quote as it is inserted or copied. */
   reference: string;
+  /** The quoted passage: it stays marked on the page while the quote stands in the composer. `scope` names a page that can be drawn again (a file's path), so the mark follows it. */
+  mark?: { range: Range; scope?: string };
   onQuote: (reference: string) => void;
   /** The action is done; the popover can go. */
   onDone: () => void;
@@ -133,7 +136,7 @@ interface QuoteActionsProps {
   children?: ReactNode;
 }
 
-export function QuoteActions({ reference, onQuote, onDone, children }: QuoteActionsProps) {
+export function QuoteActions({ reference, mark, onQuote, onDone, children }: QuoteActionsProps) {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -156,7 +159,11 @@ export function QuoteActions({ reference, onQuote, onDone, children }: QuoteActi
         title={t("chat.quote")}
         aria-label={t("chat.quote")}
         onPointerDown={(event) => event.preventDefault()}
-        onClick={() => { onQuote(reference); onDone(); }}
+        onClick={() => {
+          if (mark) addQuoteHighlight(reference, mark.range, mark.scope);
+          onQuote(reference);
+          onDone();
+        }}
         style={BUTTON_STYLE}
       >
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

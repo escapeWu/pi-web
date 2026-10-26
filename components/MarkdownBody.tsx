@@ -9,6 +9,7 @@ import { isExternalMarkdownHref, jumpToMarkdownFragment, markdownAppUrlTransform
 import { splitMarkdownBlocks } from "@/lib/markdown-blocks";
 import { ImagePreview } from "./ImagePreview";
 import { MermaidBlock, CodeBlock } from "./MermaidBlock";
+import { QuoteBlockquote } from "./QuoteSourceJump";
 
 const MarkdownLinkContext = createContext(false);
 
@@ -22,6 +23,8 @@ interface MarkdownBodyProps {
   onNavigateLink?: (href: string) => void;
   /** Render every line ending as a line break, for text the user typed. */
   keepLineBreaks?: boolean;
+  /** Blockquotes offer a way back to what they quote (a user's sent quote; needs a QuoteJumpContext provider). */
+  quoteJump?: boolean;
 }
 
 function MarkdownImage({
@@ -80,7 +83,7 @@ const MarkdownBlock = memo(function MarkdownBlock({ markdown, remarkPlugins, url
   );
 });
 
-export const MarkdownBody = memo(function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile, onNavigateLink, keepLineBreaks }: MarkdownBodyProps) {
+export const MarkdownBody = memo(function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile, onNavigateLink, keepLineBreaks, quoteJump }: MarkdownBodyProps) {
   const normalizedMarkdown = useMemo(() => normalizeDisplayMath(children), [children]);
   // A streaming reply grows by a few characters per chunk; parsing all of it
   // each time made a long reply quadratic. Its finished blocks keep their
@@ -91,6 +94,7 @@ export const MarkdownBody = memo(function MarkdownBody({ children, className, is
   );
   // Stable renderer identities keep stateful blocks mounted across message hover updates.
   const components = useMemo<Components>(() => ({
+    ...(quoteJump ? { blockquote: QuoteBlockquote } : null),
     code({ className, children, ...props }) {
       const lang = className?.replace("language-", "").toLowerCase() ?? "";
       const raw = String(children);
@@ -192,7 +196,7 @@ export const MarkdownBody = memo(function MarkdownBody({ children, className, is
         </div>
       );
     },
-  }), [cwd, isStreaming, onOpenFile, onNavigateLink]);
+  }), [cwd, isStreaming, onOpenFile, onNavigateLink, quoteJump]);
 
   return (
     <div className={["markdown-body", className].filter(Boolean).join(" ")}>

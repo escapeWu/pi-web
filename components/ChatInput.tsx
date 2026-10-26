@@ -36,6 +36,7 @@ import { useFontPreferences } from "@/hooks/useFontPreferences";
 import type { ToolPreset } from "@/lib/tool-presets";
 import { SelectorRow } from "./SelectorRow";
 import { ModelSelector, type ModelSelectorOption } from "./ModelSelector";
+import { pruneQuoteHighlights } from "@/lib/quote-highlight";
 
 export { filterModelOptions } from "./ModelSelector";
 
@@ -97,6 +98,8 @@ interface Props {
   onSoundToggle?: () => void;
   onAudioUnlock?: () => void;
   draftKey?: string;
+  /** This is the composer quotes go into: a quoted passage stays marked on the page only while its quote is in this text. */
+  ownsQuoteHighlights?: boolean;
   /** Session working directory — enables the @ file autocomplete menu */
   cwd?: string | null;
   /** Files picked with the attach button, handled like files dropped onto the chat. Without it the button takes images only. */
@@ -676,6 +679,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
   soundEnabled, onSoundToggle, onAudioUnlock,
   onPromptWithStreamingBehavior,
   draftKey,
+  ownsQuoteHighlights,
   cwd,
   onAttachFiles,
   compact = false,
@@ -693,6 +697,9 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
     draftKey ? draftImagesToAttachedImages(getDraft(draftKey)?.images) : []
   ));
   const trimmedValue = value.trimStart();
+  useEffect(() => {
+    if (ownsQuoteHighlights) pruneQuoteHighlights(value);
+  }, [ownsQuoteHighlights, value]);
   const bashMode = attachedImages.length === 0 && trimmedValue.startsWith("!");
   const bashExcluded = bashMode && trimmedValue.startsWith("!!");
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);

@@ -586,6 +586,8 @@ export const enLocale: LocalePlugin = {
     "chat.copyQuote": "Copy quote",
     "chat.quoteCopied": "Copied",
     "chat.quoteFromFile": "Quoted from",
+    "chat.quoteSourceJump": "Jump to source",
+    "chat.quoteSourceMissing": "Source not found",
     "chat.askInNewChat": "Ask in new chat",
     "chat.newQuoteChat": "New chat about selected text",
     "chat.quoteIntro": "About this passage:",

@@ -586,6 +586,8 @@ export const zhCNLocale: LocalePlugin = {
     "chat.copyQuote": "复制引用",
     "chat.quoteCopied": "已复制",
     "chat.quoteFromFile": "引用自",
+    "chat.quoteSourceJump": "跳到原文",
+    "chat.quoteSourceMissing": "找不到原文",
     "chat.askInNewChat": "在新对话询问",
     "chat.newQuoteChat": "关于选中文字的新对话",
     "chat.quoteIntro": "关于这段内容：",

@@ -1315,6 +1315,76 @@ pre, code {
   white-space: pre-wrap;
 }
 
+/* Quoting (lib/quote-highlight.ts): the passage a quote in the composer points
+   at, and the passage a "jump to source" landed on for a moment. Browsers
+   without the Highlight API flash the passage's block instead. */
+::highlight(pi-quote) {
+  background-color: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+::highlight(pi-quote-flash) {
+  background-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.quote-source-flash {
+  animation: quote-source-flash 1.8s ease-out;
+}
+@keyframes quote-source-flash {
+  from { background-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+  to { background-color: transparent; }
+}
+
+/* A sent quote: hovering the blockquote offers the way back to its source (components/QuoteSourceJump.tsx). */
+.quote-jump-wrap {
+  position: relative;
+  display: flow-root;
+  margin: 6px 0;
+}
+.quote-jump-wrap > blockquote {
+  margin: 0;
+}
+.quote-jump-button {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text-muted);
+  opacity: 0;
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 0.12s;
+}
+.quote-jump-wrap:hover .quote-jump-button,
+.quote-jump-button:focus-visible,
+.quote-jump-button[data-missing="true"] {
+  opacity: 1;
+}
+.quote-jump-button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.quote-jump-button[data-missing="true"] {
+  border-style: dashed;
+  color: var(--text-dim);
+}
+@media (hover: none) {
+  .quote-jump-button {
+    opacity: 0.75;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .quote-source-flash {
+    animation: none;
+    background-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+}
+
 .markdown-custom-message {
   line-height: 1.32;
 }

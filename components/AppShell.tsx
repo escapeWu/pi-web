@@ -1351,6 +1351,23 @@ export function AppShell() {
     handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id ?? null, page });
   }, [handleOpenFile, selectedSession?.id]);
 
+  // "Jump to source" on a sent quote that names a file: open it, then the
+  // viewer scrolls the quoted passage into view (FileViewer's `reveal`). The
+  // request belongs to that file's tab and goes when another tab takes over.
+  const [quoteReveal, setQuoteReveal] = useState<{ tabId: string; text: string; nonce: number } | null>(null);
+  const quoteRevealNonceRef = useRef(0);
+  const handleRevealQuote = useCallback((filePath: string, text: string) => {
+    handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id ?? null });
+    quoteRevealNonceRef.current += 1;
+    setQuoteReveal({ tabId: `file:${filePath}`, text, nonce: quoteRevealNonceRef.current });
+  }, [handleOpenFile, selectedSession?.id]);
+  const handleQuoteRevealHandled = useCallback((nonce: number) => {
+    setQuoteReveal((current) => (current?.nonce === nonce ? null : current));
+  }, []);
+  useEffect(() => {
+    setQuoteReveal((current) => (current && current.tabId !== activeFileTabId ? null : current));
+  }, [activeFileTabId]);
+
   const handleOpenTerminal = useCallback((cwd: string) => {
     const existing = terminalTabs.find((tab) => tab.cwd === cwd);
     const tab = existing ?? newTerminalTab(cwd);
@@ -2770,6 +2787,7 @@ export function AppShell() {
               onOpenSettings={openSettingsSection}
               onContextUsageChange={handleContextUsageChange}
               onOpenFile={handleOpenLinkedFile}
+              onRevealQuoteInFile={handleRevealQuote}
               onFilesUploaded={handleExplorerRefresh}
               onOpenSubagent={handleOpenSubagentTab}
               onAskInNewChat={handleAskInNewChat}
@@ -2932,6 +2950,8 @@ export function AppShell() {
               onMentionLines={rightPanelOpen ? handleFileLineMention : undefined}
               onAtMention={handleAtMention}
               onQuote={quoteSelectionEnabled ? handleQuoteReference : undefined}
+              reveal={quoteReveal?.tabId === activeFileTab.id ? quoteReveal : null}
+              onRevealHandled={handleQuoteRevealHandled}
               onOpenFile={(filePath, page) => handleOpenFile(
                 filePath,
                 getFileName(filePath),

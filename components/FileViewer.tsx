@@ -30,6 +30,8 @@ import { isDelimitedTablePath } from "@/lib/delimited-table";
 import { FrontmatterCard } from "./FrontmatterCard";
 import { captureSelectionAnchor, QuoteActions, SelectionPopover, type SelectionAnchor } from "./SelectionQuote";
 import { buildQuoteReference, inlineCode } from "@/lib/quote-reference";
+import { flashQuoteSource, reanchorQuoteHighlights } from "@/lib/quote-highlight";
+import { findTextRange } from "@/lib/text-anchor";
 import { diffGapLabel, parseUnifiedPatch, unifiedDiffLines, type SplitDiffGap, type UnifiedDiffLine } from "@/lib/patch";
 import type { GitFileDiffResponse } from "@/lib/git-types";
 import { useI18n } from "@/hooks/useI18n";
@@ -51,6 +53,10 @@ interface Props {
   onAtMention?: (relativePath: string, isDir: boolean) => void;
   /** Put a quote of the selected text (naming this file) into the chat input; offered on a markdown preview. */
   onQuote?: (reference: string) => void;
+  /** Bring this passage into view in the markdown preview, once: a sent quote's "jump to source". `nonce` tells one request from the next. */
+  reveal?: { text: string; nonce: number } | null;
+  /** The request was answered, found or not. */
+  onRevealHandled?: (nonce: number) => void;
   gitRefreshKey?: number;
   initialDisplayMode?: DisplayMode;
   /** PDF page to open on first render (`#page=N` from a markdown link). */
@@ -1143,6 +1149,8 @@ export function FileViewer({
   onMentionLines,
   onAtMention,
   onQuote,
+  reveal,
+  onRevealHandled,
   gitRefreshKey,
   initialDisplayMode,
   initialState,
@@ -1176,6 +1184,8 @@ export function FileViewer({
       onMentionLines={onMentionLines}
       onAtMention={onAtMention}
       onQuote={onQuote}
+      reveal={reveal}
+      onRevealHandled={onRevealHandled}
       gitRefreshKey={gitRefreshKey}
       initialDisplayMode={initialDisplayMode}
       initialState={initialState}
@@ -1193,6 +1203,8 @@ function TextFileViewer({
   onMentionLines,
   onAtMention,
   onQuote,
+  reveal,
+  onRevealHandled,
   gitRefreshKey,
   initialDisplayMode,
   initialState,
@@ -1655,6 +1667,56 @@ function TextFileViewer({
     requestedInitialDisplayMode,
   ]);
 
+  // The preview is drawn anew after a view or tab switch: the passages quoted
+  // from it are marked again.
+  useEffect(() => {
+    if (data && isMarkdown && effectiveDisplayMode === "preview" && contentRef.current) {
+      reanchorQuoteHighlights(contentRef.current, filePath);
+    }
+  }, [data, isMarkdown, effectiveDisplayMode, filePath]);
+
+  // A sent quote's "jump to source": show the preview, scroll the passage into
+  // view and flash it. The file may have changed since, or not be markdown
+  // at all: then the file simply stays as it opened.
+  const onRevealHandledRef = useRef(onRevealHandled);
+  onRevealHandledRef.current = onRevealHandled;
+  useEffect(() => {
+    if (!reveal || loading) return;
+    const handled = () => onRevealHandledRef.current?.(reveal.nonce);
+    if (error) {
+      handled();
+      return;
+    }
+    // `loading` ends a render before `data` arrives: that is not a failure.
+    if (!data) return;
+    if (!isMarkdown || !hasPreview) {
+      handled();
+      return;
+    }
+    if (effectiveDisplayMode !== "preview") {
+      updateDisplayMode("preview");
+      return;
+    }
+    let frame = 0;
+    let attempts = 0;
+    const attempt = () => {
+      const content = contentRef.current;
+      const range = content ? findTextRange(content, reveal.text) : null;
+      if (!range && attempts++ < 20) {
+        frame = requestAnimationFrame(attempt);
+        return;
+      }
+      if (range && content) {
+        const top = range.getBoundingClientRect().top - content.getBoundingClientRect().top + content.scrollTop;
+        content.scrollTo({ top: Math.max(0, top - content.clientHeight * 0.3), behavior: "instant" });
+        flashQuoteSource(range, range.startContainer.parentElement);
+      }
+      handled();
+    };
+    frame = requestAnimationFrame(attempt);
+    return () => cancelAnimationFrame(frame);
+  }, [reveal, loading, error, data, isMarkdown, hasPreview, effectiveDisplayMode, updateDisplayMode]);
+
   if (loading || (requestedInitialDisplayMode === "diff" && gitDiffLoading && !data)) {
     return (
       <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 13 }}>
@@ -1956,6 +2018,7 @@ function TextFileViewer({
               quoteAnchor.text,
               `${t("chat.quoteFromFile")} ${inlineCode(getRelativeFilePath(filePath, cwd))}`,
             )}
+            mark={{ range: quoteAnchor.range, scope: filePath }}
             onQuote={onQuote}
             onDone={closeQuote}
           />
