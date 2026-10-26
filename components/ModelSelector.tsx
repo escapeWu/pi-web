@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { SelectorRow } from "./SelectorRow";
+import { sameCompanionModel, type CompanionModel } from "@/lib/companions";
 
 export interface ModelSelectorOption {
   provider: string;
@@ -30,6 +31,12 @@ interface ModelSelectorProps {
   defaultValue?: { provider: string; modelId: string } | null;
   /** Shows a star on every row that saves it as the default. */
   onSetDefault?: (provider: string, modelId: string) => void;
+  /** Checkboxes that tick more models to answer the next message beside this one (lib/companions.ts). */
+  companions?: {
+    selected: CompanionModel[];
+    max: number;
+    onChange: (next: CompanionModel[]) => void;
+  };
 }
 
 const MODEL_FILTER_THRESHOLD = 8;
@@ -61,6 +68,7 @@ export function ModelSelector({
   placement = "up",
   defaultValue,
   onSetDefault,
+  companions,
 }: ModelSelectorProps) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
@@ -82,6 +90,7 @@ export function ModelSelector({
     else modelsByProvider.push({ provider: option.provider, options: [option] });
   }
 
+  const companionCount = companions?.selected.filter((item) => !sameCompanionModel(item, value)).length ?? 0;
   const currentName = selectedLabel ?? (value
     ? options.find((option) => option.modelId === value.modelId && option.provider === value.provider)?.name ?? value.modelId
     : emptyLabel ?? (options.length > 0 ? "Select model" : "No models"));
@@ -243,6 +252,14 @@ export function ModelSelector({
           </svg>
         )}
         <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentName}</span>
+        {companionCount > 0 && (
+          <span
+            title={t("chat.companions.selectedTitle", { count: String(companionCount) })}
+            style={{ flexShrink: 0, color: "var(--accent)", fontWeight: 600 }}
+          >
+            +{companionCount}
+          </span>
+        )}
         {variant === "field" && (
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, color: "var(--text-dim)" }}>
             <polyline points="6 9 12 15 18 9" />
@@ -322,7 +339,7 @@ export function ModelSelector({
             )}
             <div style={{ minHeight: 0, overflowY: "auto" }}>
               {onClear && !filter.trim() && (
-                <SelectorRow active={!value} gutter={Boolean(onSetDefault)} onSelect={() => {
+                <SelectorRow active={!value} gutter={Boolean(onSetDefault)} toggleGutter={Boolean(companions)} onSelect={() => {
                   setOpen(false);
                   setFilter("");
                   onClear();
@@ -342,11 +359,26 @@ export function ModelSelector({
                     </div>
                   )}
                   {group.options.map((option) => {
+                    const active = option.modelId === value?.modelId && option.provider === value?.provider;
+                    const checked = Boolean(companions?.selected.some((item) => sameCompanionModel(item, option)));
                     return (
                       <SelectorRow
                         key={`${option.provider}:${option.modelId}`}
-                        active={option.modelId === value?.modelId && option.provider === value?.provider}
-                        onSelect={() => choose(option)}
+                        active={active}
+                        onSelect={() => {
+                          // The session's own model is no companion of itself.
+                          if (checked) companions?.onChange(companions.selected.filter((item) => !sameCompanionModel(item, option)));
+                          choose(option);
+                        }}
+                        toggleGutter={Boolean(companions)}
+                        toggle={companions && !active ? {
+                          checked,
+                          disabled: !checked && companions.selected.length >= companions.max,
+                          label: t("chat.companions.toggle"),
+                          onToggle: () => companions.onChange(checked
+                            ? companions.selected.filter((item) => !sameCompanionModel(item, option))
+                            : [...companions.selected, { provider: option.provider, modelId: option.modelId }]),
+                        } : undefined}
                         star={onSetDefault ? {
                           isDefault: option.modelId === defaultValue?.modelId && option.provider === defaultValue?.provider,
                           saveLabel: t("chat.saveDefaultModel"),
@@ -361,6 +393,11 @@ export function ModelSelector({
                 </div>
               ))}
             </div>
+            {companions && (
+              <div style={{ flexShrink: 0, padding: "6px 12px", borderTop: "1px solid var(--border)", color: "var(--text-dim)", fontSize: 11, whiteSpace: "normal", maxWidth: 320 }}>
+                {t("chat.companions.hint", { max: String(companions.max) })}
+              </div>
+            )}
           </div>
         );
       })()}

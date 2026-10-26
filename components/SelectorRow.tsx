@@ -21,6 +21,14 @@ export interface SelectorRowStar {
   onSave: () => void;
 }
 
+export interface SelectorRowToggle {
+  checked: boolean;
+  /** Unchecked and no room left. */
+  disabled: boolean;
+  label: string;
+  onToggle: () => void;
+}
+
 /**
  * A selector menu row styled like a session-list row: the whole row selects
  * and highlights on hover. With `star`, the right gutter holds the default
@@ -33,6 +41,8 @@ export function SelectorRow({
   onSelect,
   star,
   gutter = Boolean(star),
+  toggle,
+  toggleGutter = Boolean(toggle),
   children,
 }: {
   active: boolean;
@@ -40,6 +50,10 @@ export function SelectorRow({
   star?: SelectorRowStar;
   /** Keep room for the star so it never covers the row's text; pass it to every row of a menu that has stars so they line up. */
   gutter?: boolean;
+  /** A checkbox in the left gutter that marks the row without choosing it (the model menu's companions). */
+  toggle?: SelectorRowToggle;
+  /** Keep room for the checkbox; pass it to every row of a menu that has checkboxes. */
+  toggleGutter?: boolean;
   children: ReactNode;
 }) {
   const isMobile = useIsMobile();
@@ -69,7 +83,7 @@ export function SelectorRow({
         onClick={onSelect}
         style={{
           display: "flex", alignItems: "center", gap: 8,
-          width: "100%", minWidth: 0, padding: gutter ? "7px 36px 7px 12px" : "7px 12px",
+          width: "100%", minWidth: 0, padding: `7px ${gutter ? 36 : 12}px 7px ${toggleGutter ? 34 : 12}px`,
           border: "none", background: "none",
           color: active ? "var(--text)" : "var(--text-muted)",
           cursor: "pointer", fontSize: 12, fontWeight: active ? 600 : 400,
@@ -81,6 +95,42 @@ export function SelectorRow({
           : <span style={{ width: 10, flexShrink: 0 }} />}
         {children}
       </button>
+      {toggle && (
+        <button
+          type="button"
+          role="checkbox"
+          aria-checked={toggle.checked}
+          aria-label={toggle.label}
+          title={toggle.label}
+          disabled={toggle.disabled}
+          onClick={(event) => {
+            event.stopPropagation();
+            toggle.onToggle();
+          }}
+          style={{
+            position: "absolute", top: "50%", left: 6, transform: "translateY(-50%)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            width: 24, height: 24, padding: 0,
+            background: "none", border: "none",
+            cursor: toggle.disabled ? "not-allowed" : "pointer",
+            opacity: toggle.disabled ? 0.35 : 1,
+          }}
+        >
+          <span
+            aria-hidden="true"
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              width: 13, height: 13, borderRadius: 3,
+              border: `1.5px solid ${toggle.checked ? "var(--accent)" : "var(--text-dim)"}`,
+              background: toggle.checked ? "var(--accent)" : "transparent",
+            }}
+          >
+            {toggle.checked && (
+              <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1.5 5 4 7.5 8.5 2.5" /></svg>
+            )}
+          </span>
+        </button>
+      )}
       {star?.isDefault && (
         <span
           role="img"

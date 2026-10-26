@@ -52,6 +52,7 @@ app/api/
   agent/new/route.ts               POST { cwd, type: prompt|ensure_session (start only), message?, toolNames?, provider?, modelId?, thinkingLevel? }
   agent/[id]/route.ts              GET state (?systemPrompt=0: without the prompt) | POST any command
   agent/[id]/events/route.ts       GET SSE stream
+  agent/[id]/companions/route.ts   POST { message, images?, models (≤2), thinkingLevel?, fresh? } the question to more models, each in a copy of the branch (or a fresh session), no extensions, read-only tools
   agent/[id]/lease/route.ts        POST ?holder=<page id> keep the session that page has selected alive (with or without its stream); reply: running, awaitingInput, subagentsActive
   agent/running/route.ts           GET running + awaiting-input session ids, sidebar pins/archive revision
   auth/api-key/[provider]/route.ts POST/DELETE stored provider API key
@@ -124,6 +125,7 @@ lib/
   types.ts                  shared TypeScript types
   pi-types.ts               local structural types for pi SDK objects
   pi-sdk-internals.ts       loader for SDK modules the package does not export (MCP connection, config, OAuth)
+  companions.ts             client-safe companion answers: the cap, each session's run in localStorage, the start request, a companion's last reply, the synthesis prompt
   tool-presets.ts           PRESET_NONE/READ_ONLY/DEFAULT/FULL + getPresetFromTools()
   tool-preset-preference.ts browser-persisted default preset for fresh sessions
   tool-fields.ts            a tool call's arguments as flat rows: all of them or no table
@@ -203,6 +205,7 @@ components/
   SidebarIcons.tsx         sidebar stroke icons
   ChatWindow.tsx           chat composition + completion sound
   ChatInput.tsx            input bar + model/thinking/tools/compact controls
+  CompanionBar.tsx         the bar above the composer while companions answer: their state, their tabs, Compare and decide
   MessageView.tsx          one message (user/assistant/toolCall/toolResult)
   CodemodeToolView.tsx     codemode card: the tool calls its script made
   BranchNavigator.tsx      in-session branch switcher

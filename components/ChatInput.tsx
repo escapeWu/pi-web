@@ -36,6 +36,7 @@ import { useFontPreferences } from "@/hooks/useFontPreferences";
 import type { ToolPreset } from "@/lib/tool-presets";
 import { SelectorRow } from "./SelectorRow";
 import { ModelSelector, type ModelSelectorOption } from "./ModelSelector";
+import { MAX_COMPANION_MODELS, type CompanionModel } from "@/lib/companions";
 import { pruneQuoteHighlights } from "@/lib/quote-highlight";
 
 export { filterModelOptions } from "./ModelSelector";
@@ -68,6 +69,9 @@ interface Props {
   defaultModel?: { provider: string; modelId: string } | null;
   /** Saves a model as the default for new sessions and selects it here. */
   onSetDefaultModel?: (provider: string, modelId: string) => void;
+  /** Models ticked to answer the next message beside the session's own (lib/companions.ts). */
+  companionModels?: CompanionModel[];
+  onCompanionModelsChange?: (next: CompanionModel[]) => void;
   onCompact?: () => void;
   onAbortCompaction?: () => void;
   isCompacting?: boolean;
@@ -669,7 +673,7 @@ export function ModelScopeWarningBanner({ warnings }: { warnings?: string[] }) {
 // chat around it re-renders through both.
 export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onModelChange, modelSwitching,
-  defaultModel, onSetDefaultModel,
+  defaultModel, onSetDefaultModel, companionModels, onCompanionModelsChange,
   onCompact, onAbortCompaction, isCompacting, compactError, onDismissCompactError, compactResult, toolPreset, onToolPresetChange,
   thinkingLevel, isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   savedDefaultThinkingLevel, onSetDefaultThinkingLevel,
@@ -2494,6 +2498,11 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
                 isAutoSelection={isAutoModelSelection}
                 defaultValue={defaultModel}
                 onSetDefault={onSetDefaultModel}
+                companions={onCompanionModelsChange ? {
+                  selected: companionModels ?? [],
+                  max: MAX_COMPANION_MODELS,
+                  onChange: onCompanionModelsChange,
+                } : undefined}
               />
             )}
           </div>

@@ -228,6 +228,13 @@ export interface RpcSessionStartOptions {
   initialModel?: { provider: string; modelId: string };
   allowInitialModelFallback?: boolean;
   thinkingLevel?: ThinkingLevel;
+  /**
+   * A companion answer (app/api/agent/[id]/companions): loads no extensions, takes
+   * `toolNames` over any selection the file already pins, and sends no completion push.
+   */
+  companion?: boolean;
+  /** A new session's header `parentSession` (the session it answers beside). */
+  parentSession?: string;
 }
 
 const CODING_TOOL_NAMES = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"];
@@ -2498,8 +2505,13 @@ export async function startRpcSession(
     sessionManager = SessionManager.open(sessionFile, undefined);
   } else {
     if (!cwd) throw new Error("cwd is required for a new session");
-    sessionManager = SessionManager.create(cwd, undefined);
+    sessionManager = SessionManager.create(
+      cwd,
+      undefined,
+      options.parentSession ? { parentSession: options.parentSession } : undefined,
+    );
   }
+  const companion = options.companion === true;
   const sessionCwd = sessionManager.getCwd();
   const sessionEntries = sessionManager.getEntries() as unknown as SessionEntry[];
   const hasPersistedSubagentSnapshot = sessionFile && hasSubagentResourceSnapshot(sessionEntries);
@@ -2509,7 +2521,7 @@ export async function startRpcSession(
   if (hasPersistedSubagentSnapshot && !subagentResources) {
     throw new Error("Invalid subagent resource snapshot");
   }
-  const persistedToolNames = subagentResources
+  const persistedToolNames = subagentResources || companion
     ? undefined
     : readSessionToolSelection(sessionEntries);
   const selectedToolNames = subagentResources?.tools ?? persistedToolNames ?? requestedToolNames;
@@ -2549,7 +2561,7 @@ export async function startRpcSession(
       ? subagentLoadsResources
         ? projectTrustReloadOptions(sessionCwd, agentDir)
         : undefined
-      : chatOnly
+      : chatOnly || companion
         ? undefined
         : projectTrustReloadOptions(sessionCwd, agentDir);
     const settingsManager = SettingsManager.create(sessionCwd, agentDir);
@@ -2561,7 +2573,7 @@ export async function startRpcSession(
     const exactSystemPromptExtension = createExactSystemPromptExtension(() => exactSystemPromptRef.current?.());
     // codemode, tool-search, and mcp, as the pi CLI loads them, and the host that decides
     // which MCP servers the session connects (ADR 0006).
-    const builtins = subagentResources || chatOnly
+    const builtins = subagentResources || chatOnly || companion
       ? undefined
       : await createPiWebBuiltinExtensions({ agentDir });
     const subagentCodemode = subagentResources?.codemode
@@ -2614,6 +2626,8 @@ export async function startRpcSession(
           }
         : chatOnly
           ? { ...CHAT_ONLY_RESOURCE_LOADER_OPTIONS, extensionFactories: [exactSystemPromptExtension] }
+        : companion
+          ? { noExtensions: true }
         : {
             extensionFactories: [
               ...(builtins?.extensions ?? []),
@@ -2754,7 +2768,7 @@ export async function startRpcSession(
           console.error("[pi-web] failed to send completion push:", error instanceof Error ? error.message : error);
         });
       },
-      suppressCompletionNotifications: Boolean(subagentResources),
+      suppressCompletionNotifications: Boolean(subagentResources) || companion,
       ...(mcpHost ? { mcpHost } : {}),
       ...(chatOnlyExtensionModel ? { chatOnlyExtensionModel } : {}),
     });

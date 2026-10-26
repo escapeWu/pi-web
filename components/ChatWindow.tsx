@@ -20,7 +20,22 @@ import { QuoteJumpContext } from "./QuoteSourceJump";
 import { dropMentionText, splitDroppedItems, uploadFiles, type DroppedItem } from "@/lib/file-upload-client";
 import { MessageView } from "./MessageView";
 import { MarkdownBody } from "./MarkdownBody";
-import { ChatInput, type ChatInputHandle } from "./ChatInput";
+import { ChatInput, type AttachedImage, type ChatInputHandle } from "./ChatInput";
+import { CompanionBar } from "./CompanionBar";
+import {
+  clearCompanionRun,
+  companionSynthesisPrompt,
+  fetchCompanionAnswer,
+  MAX_COMPANION_MODELS,
+  readCompanionRun,
+  saveCompanionRun,
+  sameCompanionModel,
+  startCompanions,
+  subscribeCompanionRuns,
+  type CompanionModel,
+  type CompanionRun,
+  type CompanionStartResult,
+} from "@/lib/companions";
 import { captureSelectionAnchor, QuoteActions, SelectionPopover } from "./SelectionQuote";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
@@ -327,6 +342,96 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
   const hasStreamingContent = useStreamingSelector(streamingStore, selectHasStreamingContent);
   const getStreamingMessage = useCallback(() => streamingStore.getState().streamingMessage, [streamingStore]);
   const sessionBusy = agentRunning || bashRunning;
+
+  // Companion answers (lib/companions.ts): the models ticked in the model menu
+  // get the next question in sessions of their own; the bar above the composer
+  // then asks this session's model to compare and decide.
+  const [companionModels, setCompanionModels] = useState<CompanionModel[]>([]);
+  const [companionRun, setCompanionRun] = useState<CompanionRun | null>(null);
+  const [companionSynthesizing, setCompanionSynthesizing] = useState(false);
+  const companionSessionId = session?.id ?? null;
+  useEffect(() => {
+    const read = () => setCompanionRun(readCompanionRun(companionSessionId ?? sessionIdRef.current));
+    read();
+    return subscribeCompanionRuns(read);
+  }, [companionSessionId, sessionIdRef]);
+
+  const companionLabel = useCallback((model: CompanionModel) => (
+    modelList.find((item) => item.provider === model.provider && item.id === model.modelId)?.name ?? model.modelId
+  ), [modelList]);
+
+  const handleSendWithCompanions = useCallback(async (message: string, images?: AttachedImage[]) => {
+    const models = companionModels
+      .filter((model) => !sameCompanionModel(model, displayModelValue))
+      .slice(0, MAX_COMPANION_MODELS);
+    const trimmed = message.trim();
+    if (models.length === 0 || trimmed.startsWith("/") || trimmed.startsWith("!") || editEntryId || sessionBusy) {
+      await handleSend(message, images);
+      return;
+    }
+    setCompanionModels([]);
+    const body = {
+      message,
+      ...(images?.length ? { images: images.map((image) => ({ type: "image" as const, data: image.data, mimeType: image.mimeType })) } : {}),
+      models: models.map((model) => ({ ...model, label: companionLabel(model) })),
+      ...(thinkingLevel && thinkingLevel !== "auto" ? { thinkingLevel } : {}),
+    };
+    const failed = (error: unknown) => addNotice({
+      type: "error",
+      message: t("chat.companions.failed", { message: error instanceof Error ? error.message : String(error) }),
+    });
+    const record = (mainSessionId: string, companions: CompanionStartResult[]) => {
+      saveCompanionRun({ mainSessionId, startedAt: Date.now(), companions });
+      for (const companion of companions) {
+        if (companion.error) failed(`${companion.label}: ${companion.error}`);
+        // On phones the panel would cover the chat: the bar's chips open them.
+        else if (companion.sessionId && !isMobile) onOpenSubagent?.(companion.sessionId, companion.label);
+      }
+    };
+    const existingId = !isNew ? session?.id : undefined;
+    if (existingId) {
+      // Copies of the branch are made before the prompt adds the question to it.
+      const companions = await startCompanions(existingId, body).catch((error) => {
+        failed(error);
+        return null;
+      });
+      await handleSend(message, images);
+      if (companions) record(existingId, companions);
+      return;
+    }
+    // A new session has no id before its prompt: the companions start empty after it.
+    await handleSend(message, images);
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    const companions = await startCompanions(sid, { ...body, fresh: true }).catch((error) => {
+      failed(error);
+      return null;
+    });
+    if (companions) record(sid, companions);
+  }, [companionModels, displayModelValue, editEntryId, sessionBusy, handleSend, companionLabel, thinkingLevel, addNotice, t, isMobile, onOpenSubagent, isNew, session?.id, sessionIdRef]);
+
+  const handleCompanionSynthesis = useCallback(async () => {
+    if (!companionRun || sessionBusy || companionSynthesizing) return;
+    setCompanionSynthesizing(true);
+    try {
+      const answers = await Promise.all(companionRun.companions.map(async (companion) => {
+        const answer = companion.sessionId
+          ? await fetchCompanionAnswer(companion.sessionId).catch((error) => ({ error: String(error) }))
+          : { error: companion.error ?? "" };
+        return {
+          label: companion.label,
+          text: answer && "text" in answer
+            ? answer.text
+            : t("chat.companions.noAnswer", { message: answer?.error ?? companion.error ?? "" }),
+        };
+      }));
+      clearCompanionRun(companionRun.mainSessionId);
+      await handleSend(companionSynthesisPrompt(t("chat.companions.synthesisIntro"), answers));
+    } finally {
+      setCompanionSynthesizing(false);
+    }
+  }, [companionRun, sessionBusy, companionSynthesizing, handleSend, t]);
+
   // While this session's run is under way its chime may come with the phone
   // locked, where a suspended context cannot start again (#1157).
   useEffect(() => {
@@ -958,7 +1063,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     <ChatInput
       ref={chatInputRef}
       ownsQuoteHighlights
-      onSend={handleSend}
+      onSend={handleSendWithCompanions}
       onAbort={handleAbort}
       onSteer={agentRunning ? handleSteer : undefined}
       onFollowUp={agentRunning ? handleFollowUp : undefined}
@@ -974,6 +1079,8 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
       modelSwitching={modelSwitching}
       defaultModel={defaultModel}
       onSetDefaultModel={handleSetDefaultModel}
+      companionModels={companionModels}
+      onCompanionModelsChange={setCompanionModels}
       onCompact={session || isNew ? handleCompact : undefined}
       onAbortCompaction={handleAbortCompaction}
       isCompacting={isCompacting}
@@ -1487,6 +1594,16 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
               {newSessionContextBar}
             </div>
           </div>
+        )}
+        {!isEmptyNew && companionRun && (
+          <CompanionBar
+            run={companionRun}
+            mainBusy={sessionBusy}
+            synthesizing={companionSynthesizing}
+            onOpen={onOpenSubagent}
+            onSynthesize={handleCompanionSynthesis}
+            onDismiss={() => clearCompanionRun(companionRun.mainSessionId)}
+          />
         )}
         {chatInputElement}
         <ExtensionStatusBar
