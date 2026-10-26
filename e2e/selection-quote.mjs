@@ -10,11 +10,25 @@ const markedPassages = (page) => page.evaluate(
   () => [...(CSS.highlights.get("pi-quote") ?? [])].map((range) => range.toString().trim()),
 );
 
-/** A session whose user messages sent quotes: of a reply (twice), of the notes file, and of nothing that exists. */
+const STEP = "Checking the staging logs first.";
+
+/**
+ * A session whose user messages sent quotes: of a folded process step, of a
+ * reply (twice), of the notes file, and of nothing that exists.
+ */
 export function quotedSessionEntries(message) {
   const reply = (id, parentId, text) => message(id, parentId, "assistant", [{ type: "text", text }]);
+  const toolResult = message("p2", "p1", "toolResult", [{ type: "text", text: "staging ok" }]);
+  Object.assign(toolResult.message, { toolCallId: "pt1", toolName: "bash", isError: false });
   return [
-    message("u1", null, "user", "Summarize the plan"),
+    message("p0", null, "user", "Check the deploy"),
+    message("p1", "p0", "assistant", [
+      { type: "text", text: STEP },
+      { type: "toolCall", id: "pt1", name: "bash", arguments: { command: "echo staging ok" } },
+    ]),
+    toolResult,
+    reply("p3", "p2", "Staging looks fine."),
+    message("u1", "p3", "user", "Summarize the plan"),
     reply("a1", "u1", `First finding is about caching.\n\n${FINDING}`),
     message("u2", "a1", "user", `> ${FINDING}\n\nWhy this one?`),
     reply("a2", "u2", "Because it blocks Friday."),
@@ -22,8 +36,10 @@ export function quotedSessionEntries(message) {
     reply("a3", "u3", "Yes."),
     message("u4", "a3", "user", `> ${FINDING}\n\nAnd again?`),
     reply("a4", "u4", "Same reason."),
-    message("u5", "a4", "user", "> Nothing like this anywhere\n\nHmm"),
-    reply("a5", "u5", "Not sure."),
+    message("u5", "a4", "user", `> ${STEP}\n\nWhy staging?`),
+    reply("a5", "u5", "It is the safe place."),
+    message("u6", "a5", "user", "> Nothing like this anywhere\n\nHmm"),
+    reply("a6", "u6", "Not sure."),
   ];
 }
 
@@ -128,6 +144,15 @@ export async function checkQuoteJump(page, { base, sessionId }) {
   await second.hover();
   await jumpButton(second).click();
   assert.deepEqual(await flashed(), [{ text: FINDING, in: "assistant" }]);
+  await page.waitForFunction(() => !CSS.highlights.has("pi-quote-flash"), null, { timeout: 5000 });
+
+  // A step inside a finished turn's folded process: the page does not hold it, the fold opens.
+  assert.equal(await page.getByText(STEP).count(), 1, "only the quote of the step is on the page while the process is folded");
+  const step = page.locator(".quote-jump-wrap", { hasText: STEP });
+  await step.hover();
+  await jumpButton(step).click();
+  await page.waitForFunction((text) => [...(CSS.highlights.get("pi-quote-flash") ?? [])].some((range) => range.toString().includes(text)), STEP);
+  assert.deepEqual(await flashed(), [{ text: STEP, in: "assistant" }]);
   await page.waitForFunction(() => !CSS.highlights.has("pi-quote-flash"), null, { timeout: 5000 });
 
   // A file quote opens the file and flashes the passage in its preview.

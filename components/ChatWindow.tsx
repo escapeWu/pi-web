@@ -14,7 +14,7 @@ import { formatTurnDuration, getTurnDurationMs } from "@/lib/turn-duration";
 import { buildQuotedSelection } from "@/lib/quoted-selection";
 import { buildQuoteReference, splitQuoteHeader } from "@/lib/quote-reference";
 import { flashQuoteSource } from "@/lib/quote-highlight";
-import { findQuoteSourceInChat } from "@/lib/quote-source";
+import { findQuotePassage, findQuoteSourceIndex, findQuoteSourceInChat } from "@/lib/quote-source";
 import { resolveLocalFilePath } from "@/lib/file-links";
 import { QuoteJumpContext } from "./QuoteSourceJump";
 import { dropMentionText, splitDroppedItems, uploadFiles, type DroppedItem } from "@/lib/file-upload-client";
@@ -185,6 +185,14 @@ function findFinalAssistantIndex(messages: AgentMessage[], userIdx: number, endI
     if (messages[candidateIdx]?.role === "assistant") return candidateIdx;
   }
   return -1;
+}
+
+/** What a message can be quoted for: an answer's text and thinking, as the reader saw them. */
+function quotableText(message: AgentMessage): string | null {
+  if (message.role !== "assistant") return null;
+  return (message as AssistantMessage).content
+    .flatMap((block) => (block.type === "text" ? [block.text] : block.type === "thinking" ? [block.thinking] : []))
+    .join("\n");
 }
 
 function getUserInputText(message: AgentMessage): string | null {
@@ -790,7 +798,12 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
 
   // "Jump to source" on a quote the user sent: the passage in this chat, or in
   // the file the quote's header names (the file panel does the revealing).
-  const jumpToQuoteSource = useCallback((blockquote: HTMLElement): boolean => {
+  // The chat's page does not always hold the passage: a finished turn's
+  // process is folded away and rows far above are outside the render window.
+  // So the message is found in the messages themselves, then shown (the fold
+  // opened, the window widened) and the passage found on the page in it.
+  const [quoteRevealEntryId, setQuoteRevealEntryId] = useState<string | null>(null);
+  const jumpToQuoteSource = useCallback(async (blockquote: HTMLElement): Promise<boolean> => {
     const { filePath, body } = splitQuoteHeader(blockquote.innerText);
     if (filePath) {
       const absolute = resolveLocalFilePath(filePath, messageCwd);
@@ -799,14 +812,40 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
       return true;
     }
     const chat = messageContentRef.current;
-    const range = chat ? findQuoteSourceInChat(chat, blockquote, body) : null;
-    if (!range) return false;
-    const target = range.startContainer.parentElement;
-    const container = scrollContainerRef.current;
-    if (target && container) scrollToMessage(target, container.clientHeight * 0.3);
-    flashQuoteSource(range, target);
-    return true;
-  }, [messageCwd, onRevealQuoteInFile, scrollContainerRef, scrollToMessage]);
+    if (!chat) return false;
+    const show = (range: Range): boolean => {
+      const target = range.startContainer.parentElement;
+      const container = scrollContainerRef.current;
+      if (target && container) scrollToMessage(target, container.clientHeight * 0.3);
+      flashQuoteSource(range, target);
+      return true;
+    };
+
+    const quotedAt = blockquote.closest<HTMLElement>("[data-entry-id]")?.dataset.entryId;
+    const quotedIndex = quotedAt ? entryIds.indexOf(quotedAt) : -1;
+    const sourceIndex = findQuoteSourceIndex(
+      messages.map(quotableText),
+      quotedIndex === -1 ? messages.length : quotedIndex,
+      body,
+    );
+    const sourceEntryId = sourceIndex === -1 ? undefined : entryIds[sourceIndex];
+    if (sourceEntryId) {
+      setVisibleCount((current) => Math.max(current, (entryIds.length + 200) * 2));
+      setQuoteRevealEntryId(sourceEntryId);
+      try {
+        for (let frame = 0; frame < 20; frame += 1) {
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          const range = findQuotePassage(chat.querySelectorAll(`[data-entry-id="${CSS.escape(sourceEntryId)}"]`), body);
+          if (range) return show(range);
+        }
+      } finally {
+        setQuoteRevealEntryId(null);
+      }
+    }
+    // Not in the messages (a tool's output, say): whatever the page shows above the quote.
+    const range = findQuoteSourceInChat(chat, blockquote, body);
+    return range ? show(range) : false;
+  }, [entryIds, messageCwd, messages, onRevealQuoteInFile, scrollContainerRef, scrollToMessage]);
   const promptAnchorSpacerRef = useRef<HTMLDivElement | null>(null);
   const promptAnchorSpacerHeightRef = useRef(0);
   const promptAnchorMeasureFrameRef = useRef<number | null>(null);
@@ -1208,7 +1247,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                   if (processMessage.role === "custom") {
                     // Not counted either: a turn whose only extra is a hidden message has no process details.
                     if (isHiddenCustomMessage(processMessage)) continue;
-                    revealProcess ||= Boolean(pendingSearchScroll && pendingSearchScroll.entryId === entryIds[processIdx]);
+                    revealProcess ||= Boolean(pendingSearchScroll && pendingSearchScroll.entryId === entryIds[processIdx]) || quoteRevealEntryId === entryIds[processIdx];
                     processMessageCount += 1;
                     processViews.push(renderMessage(processIdx, { attachRef: false, keyPrefix: "process" }));
                     continue;
@@ -1227,6 +1266,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                   processToolCount += countToolCallBlocks(blocks);
                   processMessageCount += 1;
                   revealProcess ||= Boolean(pendingSearchScroll && entryIds[processIdx] === pendingSearchScroll.entryId && (!searchBlock || blocks.includes(searchBlock)));
+                  revealProcess ||= quoteRevealEntryId === entryIds[processIdx];
                   processViews.push(renderMessage(processIdx, {
                     attachRef: false,
                     keyPrefix: "process",

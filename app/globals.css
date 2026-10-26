@@ -1319,16 +1319,16 @@ pre, code {
    at, and the passage a "jump to source" landed on for a moment. Browsers
    without the Highlight API flash the passage's block instead. */
 ::highlight(pi-quote) {
-  background-color: color-mix(in srgb, var(--accent) 24%, transparent);
+  background-color: rgba(250, 204, 21, 0.4);
 }
 ::highlight(pi-quote-flash) {
-  background-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background-color: rgba(250, 204, 21, 0.72);
 }
 .quote-source-flash {
   animation: quote-source-flash 1.8s ease-out;
 }
 @keyframes quote-source-flash {
-  from { background-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+  from { background-color: rgba(250, 204, 21, 0.72); }
   to { background-color: transparent; }
 }
 
@@ -1340,6 +1340,7 @@ pre, code {
 }
 .quote-jump-wrap > blockquote {
   margin: 0;
+  padding-right: 36px;
 }
 .quote-jump-button {
   position: absolute;
@@ -1355,7 +1356,7 @@ pre, code {
   border-radius: 5px;
   background: var(--bg);
   color: var(--text-muted);
-  opacity: 0;
+  opacity: 0.55;
   cursor: pointer;
   user-select: none;
   transition: opacity 0.12s;
@@ -1373,15 +1374,10 @@ pre, code {
   border-style: dashed;
   color: var(--text-dim);
 }
-@media (hover: none) {
-  .quote-jump-button {
-    opacity: 0.75;
-  }
-}
 @media (prefers-reduced-motion: reduce) {
   .quote-source-flash {
     animation: none;
-    background-color: color-mix(in srgb, var(--accent) 40%, transparent);
+    background-color: rgba(250, 204, 21, 0.72);
   }
 }
 

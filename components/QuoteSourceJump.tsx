@@ -8,8 +8,8 @@ import { useI18n } from "@/hooks/useI18n";
 // offers a way back to the passage it quotes. Who can find that passage
 // (the chat's messages, the file panel) is the provider's business.
 
-/** Brings the passage `blockquote` quotes into view; false when it cannot be found. */
-export type QuoteJumpHandler = (blockquote: HTMLElement) => boolean;
+/** Brings the passage `blockquote` quotes into view; false when it cannot be found. It may take a few frames (a folded process opening first). */
+export type QuoteJumpHandler = (blockquote: HTMLElement) => boolean | Promise<boolean>;
 
 export const QuoteJumpContext = createContext<QuoteJumpHandler | null>(null);
 
@@ -28,8 +28,8 @@ export function QuoteBlockquote({ children, ...props }: ComponentProps<"blockquo
   if (!jump) return <blockquote {...props}>{children}</blockquote>;
 
   const label = missing ? t("chat.quoteSourceMissing") : t("chat.quoteSourceJump");
-  const onClick = () => {
-    if (!blockquoteRef.current || jump(blockquoteRef.current)) return;
+  const onClick = async () => {
+    if (!blockquoteRef.current || await jump(blockquoteRef.current)) return;
     setMissing(true);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => setMissing(false), MISSING_FEEDBACK_MS);

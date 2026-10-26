@@ -115,7 +115,7 @@ lib/
   sidebar-actions.ts        session row menu entries, a project group's name entries and rename request, fork refusal messages, delete-all requests
   quote-reference.ts        client-safe: a selection as a markdown blockquote (file quotes name the file), where a block goes in the composer, a sent quote's header split back into file and passage
   quote-highlight.ts        the marks a quote leaves on its source (CSS Custom Highlight API): while its quote stands in the composer, re-found when a file preview is drawn again; the flash of a jump
-  quote-source.ts           finding the chat message a sent quote was taken from
+  quote-source.ts           finding the message (in the messages, then on the page) a sent quote was taken from
   text-anchor.ts            client-safe: the same passage found again in rendered DOM by its letters and digits alone
   session-links.ts          same-instance links: a session's (?session=<id>), a fresh composer's (?cwd=<dir>); the plain-click rule the sidebar keeps in the page
   new-session-context.ts    client-safe: what the project/worktree pickers show (project, worktrees, project list), lag-safe contextForCwd, the directory a group's + and Open in new tab use
