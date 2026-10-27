@@ -6,6 +6,13 @@ export type UploadConflictStrategy = typeof UPLOAD_CONFLICT_STRATEGIES[number];
 
 const UPLOAD_CONFLICT_STRATEGY_SET = new Set<string>(UPLOAD_CONFLICT_STRATEGIES);
 
+/** Single-file limit in MiB; the upload route also caps each batch at 100 MiB. */
+export function getMaxUploadFileBytes(): number {
+  const value = process.env.PI_WEB_UPLOAD_MAX_FILE_MB?.trim();
+  const mb = value && /^\d+$/.test(value) ? Number(value) : NaN;
+  return (Number.isSafeInteger(mb) && mb >= 1 && mb <= 100 ? mb : 50) * 1024 * 1024;
+}
+
 export interface UploadTargetInspection {
   conflicts: string[];
   nonReplaceable: string[];

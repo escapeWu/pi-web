@@ -61,11 +61,14 @@ For port and hostname, command-line options override the corresponding environme
 | `PI_WEB_APP_NAME` | PWA manifest `name` and `short_name`; surrounding whitespace is trimmed, empty values use the default | `Pi Web` |
 | `PI_WEB_SKIP_VERSION_CHECK=1` | Disable Pi Web update checks | Unset |
 | `PI_WEB_ALLOWED_HOSTS` | Additional exact proxy or custom hostnames, comma-separated | Unset |
+| `PI_WEB_UPLOAD_MAX_FILE_MB` | Maximum size per uploaded file, in MiB (1–100, whole numbers); invalid values use the default. Each batch is limited to 100 MiB | `50` |
 | `PI_WEB_PASSWORD` | Enable browser password login; API clients may use Basic Auth with username `pi` | Authentication disabled |
 | `PI_WEB_IDLE_TIMEOUT_MS` | Session idle timeout in milliseconds, up to `2147483647`; `0` disables idle shutdown; invalid or out-of-range values use the default | `600000` (10 min) |
 | `PI_WEB_SHUTDOWN_DEADLINE_MS` | How long extensions get to handle `session_shutdown` before a closing session is disposed anyway, in milliseconds up to `2147483647`; `0`, invalid or out-of-range values use the default | `5000` (5 s) |
 
 Set `PI_WEB_APP_NAME` before starting the server (for example, `PI_WEB_APP_NAME='Work Pi' pi-web`). After changing it, restart the server to serve the new manifest; no rebuild is required. Updates to the name of an already installed PWA are managed by the browser and are not guaranteed to appear immediately. This does not change the page title or icons.
+
+Uploads accept any file type, including ZIP, 7z, and tar archives. Use the chat's attachment button, drag files into the chat, or use Upload in the file browser. Non-image chat attachments are saved in the working directory and inserted as `@` mentions; archives are saved as files without automatic extraction. To change the per-file limit, set `PI_WEB_UPLOAD_MAX_FILE_MB` before starting the server (for example, `PI_WEB_UPLOAD_MAX_FILE_MB=75 pi-web`) and restart; no rebuild is required.
 
 For example:
 

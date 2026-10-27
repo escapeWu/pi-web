@@ -32,11 +32,72 @@ function fixture() {
 async function upload(directory, strategy = "overwrite", names = ["important.txt"]) {
   const encoded = encodeFilePathForApi(directory);
   const form = new FormData();
-  for (const name of names) form.append("files", new File(["replacement"], name));
+  for (const name of names) {
+    const file = typeof name === "string" ? new File(["replacement"], name) : name;
+    form.append("files", file);
+  }
   return POST(new NextRequest(`http://localhost/api/files/${encoded}?type=upload&conflict=${strategy}`, {
     method: "POST", headers: { host: "localhost" }, body: form,
   }), { params: Promise.resolve({ path: encoded.split("/").map(decodeURIComponent) }) });
 }
+
+test("accepts a 50 MiB ZIP and other binary file types without changing their bytes", async (t) => {
+  const previous = process.env.PI_WEB_UPLOAD_MAX_FILE_MB;
+  delete process.env.PI_WEB_UPLOAD_MAX_FILE_MB;
+  t.after(() => {
+    if (previous === undefined) delete process.env.PI_WEB_UPLOAD_MAX_FILE_MB;
+    else process.env.PI_WEB_UPLOAD_MAX_FILE_MB = previous;
+  });
+  const { directory } = fixture();
+  const archiveBytes = Buffer.alloc(50 * 1024 * 1024, 0xa5);
+  const binaryBytes = Buffer.from([0, 0xff, 0x80, 0x50, 0x4b, 0, 0x0d, 0x0a]);
+  const response = await upload(directory, "skip", [
+    new File([archiveBytes], "archive.zip", { type: "application/zip" }),
+    new File([binaryBytes], "archive.7z", { type: "application/x-7z-compressed" }),
+    new File([binaryBytes], "archive.tar.gz"),
+    new File([binaryBytes], "data.bin", { type: "application/octet-stream" }),
+  ]);
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).uploaded, ["archive.zip", "archive.7z", "archive.tar.gz", "data.bin"]);
+  assert.deepEqual(fs.readFileSync(path.join(directory, "archive.zip")), archiveBytes);
+  for (const name of ["archive.7z", "archive.tar.gz", "data.bin"]) {
+    assert.deepEqual(fs.readFileSync(path.join(directory, name)), binaryBytes);
+  }
+});
+
+test("rejects a file one byte above the default 50 MiB limit before writing files", async (t) => {
+  const previous = process.env.PI_WEB_UPLOAD_MAX_FILE_MB;
+  delete process.env.PI_WEB_UPLOAD_MAX_FILE_MB;
+  t.after(() => {
+    if (previous === undefined) delete process.env.PI_WEB_UPLOAD_MAX_FILE_MB;
+    else process.env.PI_WEB_UPLOAD_MAX_FILE_MB = previous;
+  });
+  const { directory } = fixture();
+  const response = await upload(directory, "skip", [
+    new File(["small"], "small.txt"),
+    new File([Buffer.alloc(50 * 1024 * 1024 + 1)], "too-large.zip"),
+  ]);
+  assert.equal(response.status, 413);
+  assert.deepEqual(await response.json(), { error: "Each upload must be 50MB or smaller" });
+  assert.deepEqual(fs.readdirSync(directory), ["important.txt"]);
+});
+
+test("enforces a configured limit and reports it in the error", async (t) => {
+  const previous = process.env.PI_WEB_UPLOAD_MAX_FILE_MB;
+  process.env.PI_WEB_UPLOAD_MAX_FILE_MB = "1";
+  t.after(() => {
+    if (previous === undefined) delete process.env.PI_WEB_UPLOAD_MAX_FILE_MB;
+    else process.env.PI_WEB_UPLOAD_MAX_FILE_MB = previous;
+  });
+  const { directory } = fixture();
+  const accepted = await upload(directory, "skip", [new File([Buffer.alloc(1024 * 1024)], "at-limit.zip")]);
+  assert.equal(accepted.status, 200);
+  assert.equal(fs.statSync(path.join(directory, "at-limit.zip")).size, 1024 * 1024);
+  const rejected = await upload(directory, "skip", [new File([Buffer.alloc(1024 * 1024 + 1)], "above-limit.zip")]);
+  assert.equal(rejected.status, 413);
+  assert.deepEqual(await rejected.json(), { error: "Each upload must be 1MB or smaller" });
+  assert.equal(fs.existsSync(path.join(directory, "above-limit.zip")), false);
+});
 
 for (const partial of [false, true]) {
   test(`failed overwrite preserves original and cleans staging (partial write: ${partial})`, async (t) => {
